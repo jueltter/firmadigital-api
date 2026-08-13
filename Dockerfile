@@ -1,0 +1,73 @@
+################################################################################
+
+# Create a stage for downloading the application code.
+FROM alpine/git:v2.52.0 AS source
+
+ARG MAIN_DOMAIN_ARG
+RUN echo "MAIN_DOMAIN_ARG: $MAIN_DOMAIN_ARG"
+
+WORKDIR /app
+
+# Clone the repository and switch to the 5.0.0 tag
+RUN --mount=type=secret,id=ext-repository-read-token \
+    EXT_REPOSITORY_READ_TOKEN=$(cat /run/secrets/ext-repository-read-token) \
+    && git -c http.sslVerify=false clone --depth 1 https://oauth2:${EXT_REPOSITORY_READ_TOKEN}@${MAIN_DOMAIN_ARG}/development-ext/firmaec/firmadigital-api.git
+
+################################################################################
+
+# Create a stage for downloading the application dependencies.
+FROM maven:3.9.2-eclipse-temurin-17 AS deps
+
+WORKDIR /build
+
+# Download dependencies AS a separate step to take advantage of Docker's caching.
+# Leverage a cache mount to /root/.m2 so that subsequent builds don't have to
+# re-download packages.
+RUN --mount=type=bind,from=source,source=app/firmadigital-api/pom.xml,target=pom.xml \
+    --mount=type=cache,target=/root/.m2 mvn -B dependency:go-offline -DskipTests
+
+################################################################################
+
+# Create a stage for building the application based on the stage with downloaded dependencies.
+FROM deps AS package
+
+WORKDIR /build
+
+COPY --chown=mvn:mvn --from=source ./app/firmadigital-api/src src/
+RUN --mount=type=bind,from=source,source=app/firmadigital-api/pom.xml,target=pom.xml \
+    --mount=type=cache,target=/root/.m2 \
+    mvn -B package -DskipTests
+
+################################################################################
+
+# Final stage.
+FROM quay.io/wildfly/wildfly:33.0.2.Final-jdk17
+
+# Set the timezone environment variable
+ENV TZ=America/Guayaquil
+
+# Switch to root to copy files and set ownership
+USER root
+
+# Copy the WAR produced by Maven into WildFly deployments and set ownership to jboss
+COPY --chown=jboss:jboss --from=package build/target/api.war /opt/jboss/wildfly/standalone/deployments/
+
+# Ensure WildFly picks up the deployment
+RUN sh -c 'for f in /opt/jboss/wildfly/standalone/deployments/*.war; do touch "${f}.dodeploy"; done || true'
+
+# Preserve original docker-entrypoint if present
+RUN if [ -f /opt/jboss/tools/docker-entrypoint.sh ]; then mv /opt/jboss/tools/docker-entrypoint.sh /opt/jboss/tools/docker-entrypoint.sh.original; fi
+
+# Copy wrapper entrypoint that can add a management user at container start
+COPY container-src/main/resources/config/docker-entrypoint.sh /opt/jboss/tools/docker-entrypoint.sh
+RUN chmod +x /opt/jboss/tools/docker-entrypoint.sh && chown jboss:jboss /opt/jboss/tools/docker-entrypoint.sh
+
+# Revert to the default user from the base image
+USER jboss
+
+RUN /opt/jboss/wildfly/bin/jboss-cli.sh --commands="embed-server --server-config=standalone.xml, /system-property=firmadigital-servicio.url:add(value=\"http://firmadigital-servicio:8080/servicio\")"
+
+EXPOSE 8080 9990
+
+ENTRYPOINT ["/opt/jboss/tools/docker-entrypoint.sh"]
+CMD ["/opt/jboss/wildfly/bin/standalone.sh", "-b", "0.0.0.0", "-bmanagement", "0.0.0.0"]

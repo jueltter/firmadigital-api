@@ -1,0 +1,27 @@
+name: firmadigital-api
+
+services:
+  firmadigital-api:
+    build:
+      context: .
+      args:
+        MAIN_DOMAIN_ARG: ${MAIN_DOMAIN_ARG}
+      secrets:
+        - ext-repository-read-token
+    container_name: firmadigital-api
+    restart: unless-stopped
+    ports:
+      - "8081:8080"    # HTTP port
+      - "9991:9990"    # Management console port
+    env_file:
+      - .env
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+secrets:
+  ext-repository-read-token:
+    file: ./.container/build/ext-repository-read-token.cib-secret

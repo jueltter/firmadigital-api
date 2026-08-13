@@ -1,0 +1,5 @@
+.env
+*.cib-secret
+
+# domain dependant args
+main-domain.cib-arg
