@@ -65,7 +65,7 @@ RUN chmod +x /opt/jboss/tools/docker-entrypoint.sh && chown jboss:jboss /opt/jbo
 # Revert to the default user from the base image
 USER jboss
 
-RUN /opt/jboss/wildfly/bin/jboss-cli.sh --commands="embed-server --server-config=standalone.xml, /system-property=firmadigital-servicio.url:add(value=\"http://firmadigital-servicio:8080/servicio\")"
+RUN /opt/jboss/wildfly/bin/jboss-cli.sh --commands="embed-server --server-config=standalone.xml, /system-property=firmadigital-servicio.url:add(value=\"\${env.FIRMADIGITAL_SERVICIO_URL:http://locahost:8080/servicio}\")"
 
 EXPOSE 8080 9990
 
