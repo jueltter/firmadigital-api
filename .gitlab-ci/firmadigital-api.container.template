@@ -1,0 +1,27 @@
+# ~/.config/containers/systemd/firmadigital-api.container
+
+[Unit]
+Description=firmadigital-api container
+After=network-online.target
+
+[Container]
+ContainerName=firmadigital-api
+Image=$IMAGE_NAME:$IMAGE_TAG
+PublishPort=8081:8080
+PublishPort=9991:9990
+EnvironmentFile=%h/.config/containers/systemd/firmadigital-api/.env
+Network=firmadigital-network.network
+
+
+# Healthcheck configuration
+HealthCmd="curl -f http://localhost:8080/"
+HealthInterval=30s
+HealthTimeout=10s
+HealthRetries=3
+HealthStartPeriod=40s
+
+[Service]
+Restart=always
+
+[Install]
+WantedBy=default.target
